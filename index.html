@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Niemożliwy labirynt 💜</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --tlo:#1b0f2e;
+    --tlo-jasne:#2a1a45;
+    --korytarz:#e9dcff;
+    --korytarz-brzeg:#b57aff;
+    --fiolet:#8a4fd3;
+    --fiolet-jasny:#c9a6f5;
+    --napis:#f3ebff;
+    --blad:#ff5470;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:'Quicksand',sans-serif;
+    overflow:hidden;
+    position:fixed;
+    inset:0;
+    background:radial-gradient(120% 100% at 50% 0%, var(--tlo-jasne), var(--tlo) 70%);
+    color:var(--napis);
+  }
+  #gra{
+    display:block;
+    width:100%;
+    height:100%;
+    touch-action:none;
+  }
+
+  /* ===== HUD ===== */
+  #hud{
+    position:fixed;
+    top:10px;
+    left:0;
+    right:0;
+    z-index:4;
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    pointer-events:none;
+    font-family:'Baloo 2',sans-serif;
+    font-weight:700;
+    font-size:13px;
+  }
+  .hud-pigulka{
+    background:rgba(27,15,46,.6);
+    border:2px solid var(--fiolet);
+    border-radius:20px;
+    padding:6px 14px;
+    backdrop-filter:blur(2px);
+  }
+
+  /* ===== TOAST (docinki) ===== */
+  #toast{
+    position:fixed;
+    top:16%;
+    left:50%;
+    transform:translateX(-50%) scale(.85);
+    z-index:5;
+    font-family:'Baloo 2',sans-serif;
+    font-weight:800;
+    font-size:clamp(19px,5.5vw,26px);
+    color:var(--fiolet-jasny);
+    text-shadow:0 0 18px rgba(181,122,255,.7), 0 2px 0 rgba(0,0,0,.4);
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease;
+    white-space:nowrap;
+  }
+  #toast.widoczny{opacity:1;transform:translateX(-50%) scale(1);}
+
+  /* ===== PODPOWIEDŹ NA START ===== */
+  #instrukcja{
+    position:fixed;
+    bottom:22px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:4;
+    font-size:14px;
+    font-weight:600;
+    color:var(--fiolet-jasny);
+    text-align:center;
+    pointer-events:none;
+    opacity:.9;
+    width:88vw;
+  }
+
+  /* ===== EKRAN CIEPŁY (po 15 próbach) ===== */
+  #ekran-serce{
+    position:fixed;
+    inset:0;
+    z-index:10;
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    text-align:center;
+    background:rgba(27,15,46,.93);
+    padding:28px;
+  }
+  #ekran-serce.widoczny{display:flex;}
+  #ekran-serce .serce-duze{
+    font-size:72px;
+    animation:pulsSerca 1.4s ease-in-out infinite;
+  }
+  @keyframes pulsSerca{
+    0%,100%{transform:scale(1);}
+    50%{transform:scale(1.15);}
+  }
+  #ekran-serce p{
+    font-size:17px;
+    font-weight:600;
+    line-height:1.6;
+    max-width:340px;
+    color:var(--napis);
+  }
+  .btn{
+    font-family:'Baloo 2',sans-serif;
+    font-weight:700;
+    font-size:17px;
+    color:#fff;
+    background:linear-gradient(180deg, var(--fiolet-jasny), var(--fiolet));
+    border:none;
+    border-radius:44px;
+    padding:14px 30px;
+    box-shadow:0 6px 0 #5e2fa0, 0 12px 22px rgba(0,0,0,.4);
+    cursor:pointer;
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  .btn:active{
+    transform:translateY(5px);
+    box-shadow:0 1px 0 #5e2fa0, 0 5px 12px rgba(0,0,0,.3);
+  }
+
+  /* ===== CZĄSTKI ===== */
+  .czastka{
+    position:fixed;
+    z-index:6;
+    font-size:22px;
+    pointer-events:none;
+    animation:leciCzastka 1.1s ease-out forwards;
+  }
+  @keyframes leciCzastka{
+    to{transform:translate(var(--dx),var(--dy)) rotate(40deg); opacity:0;}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gra"></canvas>
+
+<div id="hud">
+  <div class="hud-pigulka" id="hud-proby">Próby: 0</div>
+  <div class="hud-pigulka" id="hud-rekord">Najdalej: 0%</div>
+</div>
+
+<div id="toast"></div>
+<div id="instrukcja">Przyłóż palec na START i przeprowadź go do serduszka 💜<br>Nie dotykaj ścian i nie odrywaj palca!</div>
+
+<div id="ekran-serce">
+  <div class="serce-duze">💜</div>
+  <p>Ok, przyznaję się bez bicia...<br>ta gra jest <b>nie do przejścia</b>.<br><br>Niektórych rzeczy nie da się wygrać —<br>ale Ty i tak dawno wygrałaś mnie 💜</p>
+  <button class="btn" id="btn-dalej">To ja gram dalej 😤</button>
+</div>
+
+<script>
+/* ============ CANVAS ============ */
+const canvas = document.getElementById('gra');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+
+/* offscreen — korytarz rysowany raz, nie w każdej klatce */
+const korytarzCanvas = document.createElement('canvas');
+const kctx = korytarzCanvas.getContext('2d');
+
+function przeskaluj(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  korytarzCanvas.width = W * DPR;
+  korytarzCanvas.height = H * DPR;
+  kctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  zbudujSciezke();
+  narysujKorytarz();
+}
+
+/* ============ ŚCIEŻKA LABIRYNTU ============ */
+/* Punkty w układzie względnym (0-1), od startu (lewy dół) do mety (prawa góra) */
+const PUNKTY_WZGLEDNE = [
+  [0.15, 0.84], [0.38, 0.83], [0.52, 0.72], [0.34, 0.62],
+  [0.17, 0.53], [0.25, 0.38], [0.47, 0.32], [0.67, 0.40],
+  [0.84, 0.32], [0.80, 0.17], [0.62, 0.13]
+];
+const SZER_START = 50;   // szerokość korytarza na starcie (px)
+const SZER_META = 27;    // szerokość przy secu (i tak wąsko!)
+const SZER_MIN = 13;     // minimalna po ucieczkach serca
+
+let punkty = [];         // [{x,y,w}] w pikselach, z rozszerzeniami po ucieczkach
+let dlugosci = [];       // skumulowana długość łuku do każdego punktu
+let dlugoscBazowa = 0;   // długość oryginalnej ścieżki (bez rozszerzeń)
+let iloscUcieczek = 0;
+
+function zbudujSciezke(){
+  punkty = PUNKTY_WZGLEDNE.map(([px, py], i) => ({
+    x: px * W,
+    y: py * H,
+    w: SZER_START + (SZER_META - SZER_START) * (i / (PUNKTY_WZGLEDNE.length - 1))
+  }));
+  iloscUcieczek = 0;
+  przeliczDlugosci();
+  dlugoscBazowa = dlugosci[dlugosci.length - 1];
+}
+
+function przeliczDlugosci(){
+  dlugosci = [0];
+  for (let i = 1; i < punkty.length; i++){
+    const dx = punkty[i].x - punkty[i-1].x;
+    const dy = punkty[i].y - punkty[i-1].y;
+    dlugosci.push(dlugosci[i-1] + Math.hypot(dx, dy));
+  }
+}
+
+function szerokoscNa(arc){
+  for (let i = 1; i < punkty.length; i++){
+    if (arc <= dlugosci[i]){
+      const t = (arc - dlugosci[i-1]) / ((dlugosci[i] - dlugosci[i-1]) || 1);
+      return punkty[i-1].w + (punkty[i].w - punkty[i-1].w) * t;
+    }
+  }
+  return punkty[punkty.length - 1].w;
+}
+
+/* Najbliższy punkt na ścieżce: zwraca odległość i pozycję łukową */
+function najblizszyNaSciezce(x, y){
+  let najD = Infinity, najArc = 0;
+  for (let i = 1; i < punkty.length; i++){
+    const ax = punkty[i-1].x, ay = punkty[i-1].y;
+    const bx = punkty[i].x, by = punkty[i].y;
+    const abx = bx - ax, aby = by - ay;
+    const dl2 = abx*abx + aby*aby || 1;
+    let t = ((x - ax) * abx + (y - ay) * aby) / dl2;
+    t = Math.max(0, Math.min(1, t));
+    const px = ax + abx * t, py = ay + aby * t;
+    const d = Math.hypot(x - px, y - py);
+    if (d < najD){
+      najD = d;
+      najArc = dlugosci[i-1] + Math.sqrt(dl2) * t;
+    }
+  }
+  return { d: najD, arc: najArc };
+}
+
+/* ============ UCIECZKA SERCA ============ */
+function sercePos(){ return punkty[punkty.length - 1]; }
+
+function uciecznijSerce(){
+  iloscUcieczek++;
+  const n = punkty.length;
+  const ost = punkty[n-1], przed = punkty[n-2];
+  let dx = ost.x - przed.x, dy = ost.y - przed.y;
+  const dl = Math.hypot(dx, dy) || 1;
+  dx /= dl; dy /= dl;
+
+  const KROK = 135, MARGINES = 46;
+  let nx = ost.x + dx * KROK, ny = ost.y + dy * KROK;
+
+  // jeśli wyleciałoby poza ekran — skręć (w lewo lub w prawo, co lepiej mieści się na ekranie)
+  if (nx < MARGINES || nx > W - MARGINES || ny < MARGINES || ny > H - MARGINES){
+    const opcje = [[-dy, dx], [dy, -dx]]; // obroty o 90°
+    let wybrano = false;
+    for (const [ox, oy] of opcje){
+      const tx = ost.x + ox * KROK, ty = ost.y + oy * KROK;
+      if (tx > MARGINES && tx < W - MARGINES && ty > MARGINES && ty < H - MARGINES){
+        nx = tx; ny = ty; wybrano = true; break;
+      }
+    }
+    if (!wybrano){ // narożnik — celuj w środek ekranu
+      const cx = W/2 - ost.x, cy = H/2 - ost.y;
+      const cl = Math.hypot(cx, cy) || 1;
+      nx = ost.x + (cx/cl) * KROK;
+      ny = ost.y + (cy/cl) * KROK;
+    }
+  }
+
+  const nowaSzer = Math.max(SZER_MIN, ost.w - 4);
+  punkty.push({ x: nx, y: ny, w: nowaSzer });
+  przeliczDlugosci();
+  narysujKorytarz();
+
+  zagrajChichot();
+  wibruj(15);
+  pokazToast(TAUNTY_UCIECZKA[Math.floor(Math.random() * TAUNTY_UCIECZKA.length)]);
+  czastkiEmoji(nx, ny, ['💨', '💜', '💨'], 6);
+}
+
+/* ============ RYSOWANIE KORYTARZA (offscreen) ============ */
+function narysujKorytarz(){
+  kctx.clearRect(0, 0, W, H);
+
+  // korytarz rysowany krótkimi odcinkami o zmiennej grubości
+  const KROK = 5;
+  const calkowita = dlugosci[dlugosci.length - 1];
+
+  const rysujPrzebieg = (mnoznikSzer, kolor) => {
+    kctx.strokeStyle = kolor;
+    kctx.lineCap = 'round';
+    kctx.lineJoin = 'round';
+    let poprz = punktNaLuku(0);
+    for (let s = KROK; s <= calkowita + KROK; s += KROK){
+      const arc = Math.min(s, calkowita);
+      const pkt = punktNaLuku(arc);
+      kctx.lineWidth = szerokoscNa(arc) * mnoznikSzer;
+      kctx.beginPath();
+      kctx.moveTo(poprz.x, poprz.y);
+      kctx.lineTo(pkt.x, pkt.y);
+      kctx.stroke();
+      poprz = pkt;
+    }
+  };
+
+  rysujPrzebieg(1.22, 'rgba(181,122,255,.5)'); // poświata brzegu
+  rysujPrzebieg(1.0, '#e9dcff');               // właściwy korytarz
+
+  // delikatna przerywana linia środkowa
+  kctx.strokeStyle = 'rgba(138,79,211,.35)';
+  kctx.lineWidth = 2;
+  kctx.setLineDash([7, 9]);
+  kctx.beginPath();
+  kctx.moveTo(punkty[0].x, punkty[0].y);
+  for (let i = 1; i < punkty.length; i++) kctx.lineTo(punkty[i].x, punkty[i].y);
+  kctx.stroke();
+  kctx.setLineDash([]);
+
+  // strefa START
+  const st = punkty[0];
+  kctx.fillStyle = '#8a4fd3';
+  kctx.beginPath();
+  kctx.arc(st.x, st.y, 30, 0, Math.PI * 2);
+  kctx.fill();
+  kctx.fillStyle = '#fff';
+  kctx.font = '800 13px "Baloo 2", sans-serif';
+  kctx.textAlign = 'center';
+  kctx.textBaseline = 'middle';
+  kctx.fillText('START', st.x, st.y);
+  kctx.textAlign = 'left';
+}
+
+function punktNaLuku(arc){
+  for (let i = 1; i < punkty.length; i++){
+    if (arc <= dlugosci[i]){
+      const t = (arc - dlugosci[i-1]) / ((dlugosci[i] - dlugosci[i-1]) || 1);
+      return {
+        x: punkty[i-1].x + (punkty[i].x - punkty[i-1].x) * t,
+        y: punkty[i-1].y + (punkty[i].y - punkty[i-1].y) * t
+      };
+    }
+  }
+  return { x: punkty[punkty.length-1].x, y: punkty[punkty.length-1].y };
+}
+
+/* ============ STAN GRY ============ */
+let sledzenie = false;       // czy palec jest w trakcie prowadzenia
+let palecX = 0, palecY = 0;
+let maksArc = 0;             // najdalszy punkt osiągnięty w tej próbie
+let proby = 0;
+let rekordProc = 0;
+let pokazanoSerce = false;
+let trzesienie = 0;          // czas trzęsienia ekranu po błędzie
+
+try{
+  proby = parseInt(localStorage.getItem('labirynt-proby') || '0', 10) || 0;
+  rekordProc = parseInt(localStorage.getItem('labirynt-rekord') || '0', 10) || 0;
+}catch(e){}
+
+const hudProby = document.getElementById('hud-proby');
+const hudRekord = document.getElementById('hud-rekord');
+function odswiezHud(){
+  hudProby.textContent = 'Próby: ' + proby;
+  hudRekord.textContent = 'Najdalej: ' + rekordProc + '%';
+}
+odswiezHud();
+
+/* ============ DOCINKI ============ */
+const TAUNTY_PORAZKA = [
+  'Blisko! 😌', 'Prawie było!', 'Serio?!', 'Ściana Cię pozdrawia 🧱',
+  'To była dopiero rozgrzewka', 'Gloria, skup się! 😤', 'Auć! 💥',
+  'Może następnym razem...', 'Widziałem lepsze podejścia 👀'
+];
+const TAUNTY_UCIECZKA = [
+  'Hihi, za wolno! 💨', 'Serduszko ucieka!', 'Nie tym razem! 😏',
+  'Łap mnie! 💜', 'Prawie mnie miałaś!'
+];
+
+const toastEl = document.getElementById('toast');
+let toastTimeoutId = null;
+function pokazToast(tekst){
+  toastEl.textContent = tekst;
+  toastEl.classList.add('widoczny');
+  if (toastTimeoutId) clearTimeout(toastTimeoutId);
+  toastTimeoutId = setTimeout(() => toastEl.classList.remove('widoczny'), 1600);
+}
+
+/* ============ PORAŻKA ============ */
+function porazka(x, y, powod){
+  if (!sledzenie) return;
+  sledzenie = false;
+  proby++;
+  const proc = Math.min(99, Math.round((maksArc / dlugoscBazowa) * 100));
+  if (proc > rekordProc) rekordProc = proc;
+  try{
+    localStorage.setItem('labirynt-proby', String(proby));
+    localStorage.setItem('labirynt-rekord', String(rekordProc));
+  }catch(e){}
+  odswiezHud();
+
+  zagrajBuczek();
+  wibruj([70, 40, 110]);
+  trzesienie = 0.28;
+  czastkiEmoji(x, y, ['💔', '💥', '💔'], 7);
+
+  if (powod === 'sciana' && proc >= 60){
+    pokazToast(`${proc}%! Tak blisko... 💔`);
+  } else if (powod === 'palec'){
+    pokazToast('Nie odrywaj palca! 😱');
+  } else {
+    pokazToast(TAUNTY_PORAZKA[Math.floor(Math.random() * TAUNTY_PORAZKA.length)]);
+  }
+
+  // reset rozszerzeń serca na nową próbę
+  zbudujSciezke();
+  narysujKorytarz();
+
+  // ciepły ekran po 15 próbach (raz)
+  if (proby >= 15 && !pokazanoSerce){
+    pokazanoSerce = true;
+    setTimeout(() => {
+      document.getElementById('ekran-serce').classList.add('widoczny');
+      zagrajCieplo();
+    }, 900);
+  }
+}
+
+document.getElementById('btn-dalej').addEventListener('click', () => {
+  document.getElementById('ekran-serce').classList.remove('widoczny');
+});
+
+/* ============ WEJŚCIE ============ */
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  zapewnijAudioCtx();
+  const st = punkty[0];
+  const d = Math.hypot(e.clientX - st.x, e.clientY - st.y);
+  if (d <= 34){
+    sledzenie = true;
+    maksArc = 0;
+    palecX = e.clientX;
+    palecY = e.clientY;
+    zagrajStart();
+  } else {
+    pokazToast('Zacznij od pola START! 👇');
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!sledzenie) return;
+  e.preventDefault();
+  // próbkowanie po drodze ruchu, żeby szybki palec nie "przeskoczył" ściany
+  const kroki = Math.max(1, Math.ceil(Math.hypot(e.clientX - palecX, e.clientY - palecY) / 6));
+  for (let i = 1; i <= kroki; i++){
+    const x = palecX + (e.clientX - palecX) * (i / kroki);
+    const y = palecY + (e.clientY - palecY) * (i / kroki);
+
+    const { d, arc } = najblizszyNaSciezce(x, y);
+    if (d > szerokoscNa(arc) / 2 - 2){
+      palecX = x; palecY = y;
+      porazka(x, y, 'sciana');
+      return;
+    }
+    if (arc > maksArc) maksArc = arc;
+
+    const serce = sercePos();
+    if (Math.hypot(x - serce.x, y - serce.y) < 52){
+      uciecznijSerce(); // "wygrana" nigdy nie następuje 😈
+    }
+  }
+  palecX = e.clientX;
+  palecY = e.clientY;
+});
+
+function przerwanie(e){
+  if (sledzenie) porazka(palecX, palecY, 'palec');
+}
+canvas.addEventListener('pointerup', przerwanie);
+canvas.addEventListener('pointercancel', przerwanie);
+canvas.addEventListener('pointerleave', przerwanie);
+
+/* ============ PĘTLA RYSOWANIA ============ */
+let ostatniCzas = performance.now();
+function petla(teraz){
+  const dt = Math.min((teraz - ostatniCzas) / 1000, 0.033);
+  ostatniCzas = teraz;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if (trzesienie > 0){
+    trzesienie -= dt;
+    const sila = trzesienie * 26;
+    ctx.translate((Math.random() - 0.5) * sila, (Math.random() - 0.5) * sila);
+  }
+
+  ctx.drawImage(korytarzCanvas, 0, 0, W, H);
+
+  // serduszko na mecie (pulsuje)
+  const serce = sercePos();
+  const puls = 1 + Math.sin(performance.now() / 260) * 0.12;
+  ctx.font = `${34 * puls}px "Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('💜', serce.x, serce.y);
+
+  ctx.font = '800 11px "Baloo 2", sans-serif';
+  ctx.fillStyle = '#c9a6f5';
+  ctx.fillText('META', serce.x, serce.y + 30);
+  ctx.textAlign = 'left';
+
+  // świecąca kropka pod palcem
+  if (sledzenie){
+    ctx.beginPath();
+    ctx.arc(palecX, palecY, 9, 0, Math.PI * 2);
+    ctx.fillStyle = '#8a4fd3';
+    ctx.shadowColor = '#b57aff';
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+  requestAnimationFrame(petla);
+}
+
+/* ============ CZĄSTKI EMOJI ============ */
+function czastkiEmoji(x, y, znaki, ile){
+  for (let i = 0; i < ile; i++){
+    const s = document.createElement('div');
+    s.className = 'czastka';
+    s.textContent = znaki[i % znaki.length];
+    s.style.left = x + 'px';
+    s.style.top = y + 'px';
+    s.style.setProperty('--dx', (Math.random() - 0.5) * 160 + 'px');
+    s.style.setProperty('--dy', (-40 - Math.random() * 120) + 'px');
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 1200);
+  }
+}
+
+/* ============ WIBRACJE ============ */
+function wibruj(wzor){
+  try{ if (navigator.vibrate) navigator.vibrate(wzor); }catch(e){}
+}
+
+/* ============ DŹWIĘKI (syntezowane) ============ */
+let audioCtx = null;
+function zapewnijAudioCtx(){
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function zagrajNute(freq, startTime, dlugosc, typ, glosnosc){
+  const osc = audioCtx.createOscillator();
+  osc.type = typ;
+  osc.frequency.value = freq;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.0001, startTime);
+  gain.gain.exponentialRampToValueAtTime(glosnosc, startTime + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + dlugosc);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + dlugosc + 0.02);
+}
+
+function zagrajStart(){
+  if (!audioCtx) return;
+  zagrajNute(523, audioCtx.currentTime, 0.09, 'square', 0.12);
+}
+
+function zagrajBuczek(){
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(140, t);
+  osc.frequency.exponentialRampToValueAtTime(55, t + 0.3);
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.3, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + 0.4);
+}
+
+function zagrajChichot(){
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  zagrajNute(880, t, 0.07, 'square', 0.13);
+  zagrajNute(1046, t + 0.08, 0.07, 'square', 0.13);
+  zagrajNute(1318, t + 0.16, 0.1, 'square', 0.13);
+}
+
+function zagrajCieplo(){
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const nuty = [392, 494, 587, 784];
+  nuty.forEach((f, i) => zagrajNute(f, t + i * 0.16, 0.4, 'triangle', 0.14));
+}
+
+/* ============ START ============ */
+przeskaluj();
+addEventListener('resize', przeskaluj);
+requestAnimationFrame(petla);
+</script>
+</body>
+</html>
