@@ -32,7 +32,55 @@
     width:100%;
     height:100%;
     touch-action:none;
+    position:relative;
+    z-index:1;
   }
+
+  /* ===== PŁYWAJĄCE EMOTKI W TLE ===== */
+  #tlo-emotki{
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    overflow:hidden;
+  }
+  .tlo-emotka{
+    position:absolute;
+    will-change:transform;
+    filter:blur(0.4px);
+  }
+
+  /* ===== PRZYCISK MUZYKI ===== */
+  #btn-muzyka{
+    position:fixed;
+    top:10px;
+    left:12px;
+    z-index:5;
+    background:rgba(27,15,46,.6);
+    color:var(--napis);
+    font-size:17px;
+    width:36px;
+    height:36px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:50%;
+    border:2px solid var(--fiolet);
+    cursor:pointer;
+    backdrop-filter:blur(2px);
+  }
+
+  /* ===== CZERWONY BŁYSK PRZY PORAŻCE ===== */
+  #flash{
+    position:fixed;
+    inset:0;
+    z-index:7;
+    pointer-events:none;
+    background:radial-gradient(ellipse at center, transparent 35%, rgba(255,60,90,.5));
+    opacity:0;
+    transition:opacity .12s ease;
+  }
+  #flash.aktywny{opacity:1;}
 
   /* ===== HUD ===== */
   #hud{
@@ -155,7 +203,10 @@
 </head>
 <body>
 
+<div id="tlo-emotki"></div>
 <canvas id="gra"></canvas>
+<button id="btn-muzyka" aria-label="Włącz/wyłącz muzykę">🔊</button>
+<div id="flash"></div>
 
 <div id="hud">
   <div class="hud-pigulka" id="hud-proby">Próby: 0</div>
@@ -369,6 +420,40 @@ function punktNaLuku(arc){
   return { x: punkty[punkty.length-1].x, y: punkty[punkty.length-1].y };
 }
 
+/* ============ PŁYWAJĄCE EMOTKI W TLE ============ */
+const warstwaTla = document.getElementById('tlo-emotki');
+const ZNAKI_TLA = ['💜', '✨', '🫧', '⭐', '💜', '🫧'];
+const emotkiTla = [];
+
+function nowaEmotkaTla(){
+  const el = document.createElement('div');
+  el.className = 'tlo-emotka';
+  el.textContent = ZNAKI_TLA[Math.floor(Math.random() * ZNAKI_TLA.length)];
+  const rozmiar = 15 + Math.random() * 16;
+  el.style.fontSize = rozmiar + 'px';
+  el.style.opacity = (0.18 + Math.random() * 0.22).toFixed(2);
+  warstwaTla.appendChild(el);
+  emotkiTla.push({
+    el,
+    x: Math.random() * innerWidth,
+    y: innerHeight + Math.random() * innerHeight,
+    v: 9 + Math.random() * 14,          // px/s w górę
+    faza: Math.random() * Math.PI * 2,
+    sway: 6 + Math.random() * 10
+  });
+}
+for (let i = 0; i < 12; i++) nowaEmotkaTla();
+
+function klatkaTla(dt){
+  const t = performance.now() / 1000;
+  for (const m of emotkiTla){
+    m.y -= m.v * dt;
+    if (m.y < -40){ m.y = innerHeight + 40; m.x = Math.random() * innerWidth; }
+    const kolys = Math.sin(t * 0.7 + m.faza) * m.sway;
+    m.el.style.transform = `translate(${m.x + kolys}px,${m.y}px)`;
+  }
+}
+
 /* ============ STAN GRY ============ */
 let sledzenie = false;       // czy palec jest w trakcie prowadzenia
 let palecX = 0, palecY = 0;
@@ -377,6 +462,10 @@ let proby = 0;
 let rekordProc = 0;
 let pokazanoSerce = false;
 let trzesienie = 0;          // czas trzęsienia ekranu po błędzie
+let smuga = [];              // ślad za palcem [{x,y,t}]
+let ostatnieBicie = 0;       // czas ostatniego "bum-bum" serca
+let ostatniaCwiartka = 0;    // 0/1/2/3 — przekroczone progi 25/50/75%
+let ostatniaIskraSerca = 0;  // rate-limit iskier przy zbliżaniu do mety
 
 try{
   proby = parseInt(localStorage.getItem('labirynt-proby') || '0', 10) || 0;
@@ -427,7 +516,13 @@ function porazka(x, y, powod){
   zagrajBuczek();
   wibruj([70, 40, 110]);
   trzesienie = 0.28;
+  smuga = [];
   czastkiEmoji(x, y, ['💔', '💥', '💔'], 7);
+
+  // czerwony błysk na krawędziach ekranu
+  const flash = document.getElementById('flash');
+  flash.classList.add('aktywny');
+  setTimeout(() => flash.classList.remove('aktywny'), 200);
 
   if (powod === 'sciana' && proc >= 60){
     pokazToast(`${proc}%! Tak blisko... 💔`);
@@ -464,6 +559,9 @@ canvas.addEventListener('pointerdown', (e) => {
   if (d <= 34){
     sledzenie = true;
     maksArc = 0;
+    ostatniaCwiartka = 0;
+    ostatnieBicie = 0;
+    smuga = [];
     palecX = e.clientX;
     palecY = e.clientY;
     zagrajStart();
@@ -487,15 +585,34 @@ canvas.addEventListener('pointermove', (e) => {
       porazka(x, y, 'sciana');
       return;
     }
-    if (arc > maksArc) maksArc = arc;
+    if (arc > maksArc){
+      maksArc = arc;
+      // brzdęk przy przekroczeniu 25/50/75% — buduje napięcie
+      const cwiartka = Math.floor((maksArc / dlugoscBazowa) * 4);
+      if (cwiartka > ostatniaCwiartka && cwiartka <= 3){
+        ostatniaCwiartka = cwiartka;
+        zagrajCwiartke(cwiartka);
+      }
+    }
 
     const serce = sercePos();
-    if (Math.hypot(x - serce.x, y - serce.y) < 52){
+    const doSerca = Math.hypot(x - serce.x, y - serce.y);
+    if (doSerca < 52){
       uciecznijSerce(); // "wygrana" nigdy nie następuje 😈
+    } else if (doSerca < 140){
+      // kuszące iskierki, gdy jesteś blisko (rate-limit)
+      const teraz = performance.now();
+      if (teraz - ostatniaIskraSerca > 280){
+        ostatniaIskraSerca = teraz;
+        czastkiEmoji(serce.x, serce.y, ['✨'], 2);
+        zagrajBlysk();
+      }
     }
   }
   palecX = e.clientX;
   palecY = e.clientY;
+  smuga.push({ x: palecX, y: palecY, t: performance.now() });
+  if (smuga.length > 45) smuga.shift();
 });
 
 function przerwanie(e){
@@ -511,6 +628,18 @@ function petla(teraz){
   const dt = Math.min((teraz - ostatniCzas) / 1000, 0.033);
   ostatniCzas = teraz;
 
+  klatkaTla(dt);
+
+  // bicie serca — im dalej jesteś, tym szybsze "bum-bum" (napięcie!)
+  if (sledzenie && audioCtx){
+    const prog = Math.min(1, maksArc / dlugoscBazowa);
+    const interwal = 0.95 - 0.68 * prog; // od ~1 s do ~0,27 s
+    if (teraz / 1000 - ostatnieBicie >= interwal){
+      ostatnieBicie = teraz / 1000;
+      zagrajBicieSerca(0.1 + prog * 0.1);
+    }
+  }
+
   ctx.clearRect(0, 0, W, H);
   ctx.save();
   if (trzesienie > 0){
@@ -520,6 +649,18 @@ function petla(teraz){
   }
 
   ctx.drawImage(korytarzCanvas, 0, 0, W, H);
+
+  // smuga za palcem — gasnący fioletowy ślad
+  const terazMs = performance.now();
+  for (const p of smuga){
+    const wiek = (terazMs - p.t) / 450;
+    if (wiek >= 1) continue;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 8 * (1 - wiek), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(181,122,255,${(0.4 * (1 - wiek)).toFixed(3)})`;
+    ctx.fill();
+  }
+  while (smuga.length && terazMs - smuga[0].t > 450) smuga.shift();
 
   // serduszko na mecie (pulsuje)
   const serce = sercePos();
@@ -571,12 +712,23 @@ function wibruj(wzor){
 
 /* ============ DŹWIĘKI (syntezowane) ============ */
 let audioCtx = null;
+let muzykaGainNode = null;
+let muzykaWlaczona = true;
+let muzykaTimeoutId = null;
+const btnMuzyka = document.getElementById('btn-muzyka');
+
 function zapewnijAudioCtx(){
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    muzykaGainNode = audioCtx.createGain();
+    muzykaGainNode.gain.value = 0.45;
+    muzykaGainNode.connect(audioCtx.destination);
+    if (muzykaWlaczona) zaplanujPetleMuzyki();
+  }
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-function zagrajNute(freq, startTime, dlugosc, typ, glosnosc){
+function zagrajNute(freq, startTime, dlugosc, typ, glosnosc, cel){
   const osc = audioCtx.createOscillator();
   osc.type = typ;
   osc.frequency.value = freq;
@@ -585,14 +737,87 @@ function zagrajNute(freq, startTime, dlugosc, typ, glosnosc){
   gain.gain.exponentialRampToValueAtTime(glosnosc, startTime + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, startTime + dlugosc);
   osc.connect(gain);
-  gain.connect(audioCtx.destination);
+  gain.connect(cel || audioCtx.destination);
   osc.start(startTime);
   osc.stop(startTime + dlugosc + 0.02);
 }
 
+/* Nastrojowa, lekko tajemnicza pętla (a-moll) — pasuje do napięcia w labiryncie */
+const MELODIA = [
+  440.00, 523.25, 659.25, 523.25,   // A4 C5 E5 C5
+  392.00, 493.88, 587.33, 493.88,   // G4 B4 D5 B4
+  349.23, 440.00, 523.25, 440.00,   // F4 A4 C5 A4
+  329.63, 392.00, 493.88, 392.00    // E4 G4 B4 G4
+];
+const BAS = [110.00, 98.00, 87.31, 82.41]; // A2 G2 F2 E2
+
+function zaplanujPetleMuzyki(){
+  if (!muzykaWlaczona || !audioCtx) return;
+  const KROK_NUTY = 0.17;
+  let czas = audioCtx.currentTime + 0.05;
+  const start = czas;
+  for (const f of MELODIA){
+    zagrajNute(f, czas, KROK_NUTY * 0.82, 'square', 0.07, muzykaGainNode);
+    czas += KROK_NUTY;
+  }
+  const dlugoscPetli = czas - start;
+  const krokBasu = dlugoscPetli / BAS.length;
+  for (let i = 0; i < BAS.length; i++){
+    zagrajNute(BAS[i], start + i * krokBasu, krokBasu * 0.92, 'triangle', 0.11, muzykaGainNode);
+  }
+  muzykaTimeoutId = setTimeout(zaplanujPetleMuzyki, dlugoscPetli * 1000);
+}
+
+btnMuzyka.addEventListener('click', (e) => {
+  e.stopPropagation();
+  zapewnijAudioCtx();
+  muzykaWlaczona = !muzykaWlaczona;
+  btnMuzyka.textContent = muzykaWlaczona ? '🔊' : '🔇';
+  if (muzykaWlaczona && muzykaTimeoutId === null){
+    zaplanujPetleMuzyki();
+  } else if (!muzykaWlaczona && muzykaTimeoutId !== null){
+    clearTimeout(muzykaTimeoutId);
+    muzykaTimeoutId = null;
+  }
+});
+
 function zagrajStart(){
   if (!audioCtx) return;
   zagrajNute(523, audioCtx.currentTime, 0.09, 'square', 0.12);
+}
+
+/* "bum-bum" serca — dwa niskie uderzenia, głośniejsze im bliżej mety */
+function zagrajBicieSerca(glosnosc){
+  const t = audioCtx.currentTime;
+  const bum = (kiedy, sila) => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(78, kiedy);
+    osc.frequency.exponentialRampToValueAtTime(52, kiedy + 0.1);
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(sila, kiedy);
+    gain.gain.exponentialRampToValueAtTime(0.0001, kiedy + 0.12);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(kiedy);
+    osc.stop(kiedy + 0.14);
+  };
+  bum(t, glosnosc);
+  bum(t + 0.14, glosnosc * 0.6);
+}
+
+/* rosnący brzdęk przy 25/50/75% drogi */
+function zagrajCwiartke(nr){
+  if (!audioCtx) return;
+  const freq = [0, 659.25, 783.99, 987.77][nr];
+  zagrajNute(freq, audioCtx.currentTime, 0.12, 'square', 0.13);
+  zagrajNute(freq * 1.5, audioCtx.currentTime + 0.09, 0.12, 'square', 0.1);
+}
+
+/* krótki błysk dźwiękowy przy iskrach kuszącego serca */
+function zagrajBlysk(){
+  if (!audioCtx) return;
+  zagrajNute(1568, audioCtx.currentTime, 0.06, 'square', 0.07);
 }
 
 function zagrajBuczek(){
